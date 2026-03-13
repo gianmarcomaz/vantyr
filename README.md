@@ -35,9 +35,10 @@ Research indicates 37% of published agent skills contain security flaws and 43% 
 
 | Method | Command |
 |---|---|
-| Global install (recommended) | `npm install -g @gianmarcomaz/vantyr` |
-| Zero-install — Windows | `npx -p @gianmarcomaz/vantyr vantyr scan <url>` |
-| Zero-install — Mac/Linux | `npx @gianmarcomaz/vantyr scan <url>` |
+| Zero-install (recommended) | `npx -p @gianmarcomaz/vantyr@latest vantyr scan <url>` |
+| Global install | `npm install -g @gianmarcomaz/vantyr` |
+
+The `-p` flag is required for scoped packages — it tells npx which package to install before invoking the `vantyr` command. Always pin `@latest` to ensure you run the most recent version without a local install.
 
 Requires Node.js >= 18.
 
@@ -46,18 +47,20 @@ Requires Node.js >= 18.
 ## 2. Quick Start
 
 ```bash
-# Scan a public repository
-vantyr scan https://github.com/owner/repo
+# Zero-install — works on any machine with Node.js, no prior setup required
+npx -p @gianmarcomaz/vantyr@latest vantyr scan https://github.com/lharries/whatsapp-mcp
 
 # Scan a private repository
-vantyr scan https://github.com/owner/repo --token <github-pat>
+npx -p @gianmarcomaz/vantyr@latest vantyr scan https://github.com/owner/repo --token <github-pat>
 
 # Scan local MCP configuration files
-vantyr scan --local
+npx -p @gianmarcomaz/vantyr@latest vantyr scan --local
 
 # Machine-readable output for pipelines
-vantyr scan https://github.com/owner/repo --json
+npx -p @gianmarcomaz/vantyr@latest vantyr scan https://github.com/owner/repo --json
 ```
+
+If you installed globally (`npm install -g @gianmarcomaz/vantyr`), replace the npx prefix with just `vantyr scan ...`.
 
 GitHub limits unauthenticated requests to 60/hour. A Personal Access Token raises this to 5,000/hour and unlocks private repo access. Generate one at [github.com/settings/tokens](https://github.com/settings/tokens) with read-only `Contents` scope.
 
@@ -530,11 +533,15 @@ Local mode scans the configuration files themselves. It does not follow `command
 
 If your MCP server scores **80 or above** (CERTIFIED), add the badge to your `README.md`:
 
+[![Certified by Vantyr](https://img.shields.io/badge/Vantyr-CERTIFIED-brightgreen?style=flat-square&logo=checkmarx&logoColor=white)](https://www.npmjs.com/package/@gianmarcomaz/vantyr)
+
 ```markdown
 [![Certified by Vantyr](https://img.shields.io/badge/Vantyr-CERTIFIED-brightgreen?style=flat-square&logo=checkmarx&logoColor=white)](https://www.npmjs.com/package/@gianmarcomaz/vantyr)
 ```
 
 With your score included (replace `92` with your actual score):
+
+[![Certified by Vantyr](https://img.shields.io/badge/Vantyr-CERTIFIED%20%E2%80%94%2092%2F100-brightgreen?style=flat-square&logo=checkmarx&logoColor=white)](https://www.npmjs.com/package/@gianmarcomaz/vantyr)
 
 ```markdown
 [![Certified by Vantyr](https://img.shields.io/badge/Vantyr-CERTIFIED%20%E2%80%94%2092%2F100-brightgreen?style=flat-square&logo=checkmarx&logoColor=white)](https://www.npmjs.com/package/@gianmarcomaz/vantyr)
@@ -543,7 +550,7 @@ With your score included (replace `92` with your actual score):
 To verify a badge claim, anyone can run:
 
 ```bash
-npx @gianmarcomaz/vantyr scan https://github.com/owner/repo
+npx -p @gianmarcomaz/vantyr@latest vantyr scan https://github.com/owner/repo
 ```
 
 ---
