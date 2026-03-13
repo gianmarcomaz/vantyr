@@ -1,0 +1,49 @@
+{
+  "name": "@gianmarcomaz/vantyr",
+  "version": "1.0.4",
+  "description": "MCP security scanner — Trust Score for AI dev environments. 100% local, zero telemetry.",
+  "author": "Gianmarco Mazzella",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gianmarcomaz/vantyr.git"
+  },
+  "homepage": "https://github.com/gianmarcomaz/vantyr#readme",
+  "bugs": {
+    "url": "https://github.com/gianmarcomaz/vantyr/issues"
+  },
+  "bin": {
+    "vantyr": "bin/vantyr.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "security",
+    "scanner",
+    "static-analysis",
+    "ai",
+    "llm",
+    "trust-score",
+    "cli",
+    "sarif",
+    "owasp",
+    "prompt-injection"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0"
+  }
+}

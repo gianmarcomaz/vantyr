@@ -1,0 +1,103 @@
+# ─── Secrets & credentials ───────────────────────────────────────────────────
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+.env.staging
+.env.test
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.secret
+*.secrets
+secrets/
+creds/
+credentials/
+
+# ─── Lock files (not needed by consumers) ────────────────────────────────────
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# ─── Development & test infrastructure ───────────────────────────────────────
+test/
+tests/
+__tests__/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+coverage/
+.nyc_output/
+jest.config.*
+vitest.config.*
+
+# ─── Build / compiler output (nothing compiled here, but future-proof) ───────
+dist/
+build/
+out/
+*.tsbuildinfo
+tsconfig.json
+tsconfig.*.json
+
+# ─── Node internals ──────────────────────────────────────────────────────────
+node_modules/
+
+# ─── Version control ─────────────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+
+# ─── IDE & editor config ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+.cursor/
+*.cursorrules
+*.windsurfrules
+*.clinerules
+.editorconfig
+
+# ─── Linter / formatter config ───────────────────────────────────────────────
+.eslintrc
+.eslintrc.*
+.eslintignore
+.prettierrc
+.prettierrc.*
+.prettierignore
+biome.json
+.stylelintrc
+.stylelintrc.*
+
+# ─── CI / CD pipelines ───────────────────────────────────────────────────────
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+.husky/
+.lintstagedrc
+.lintstagedrc.*
+Makefile
+
+# ─── OS-generated junk ───────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── Logs & diagnostics ──────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+logs/
