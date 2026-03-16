@@ -242,6 +242,116 @@ function isGoExecFirstArgDynamic(line) {
 }
 
 /* ════════════════════════════════════════════════════
+   Multi-line call extraction and argument analysis
+   for context-aware subprocess / spawn detection
+   ════════════════════════════════════════════════════ */
+
+/**
+ * Extract the full text of a function call that may span multiple lines.
+ * Tracks parenthesis depth from the opening ( on startIdx.
+ */
+function extractFullCall(lines, startIdx, maxForward = 15) {
+    let text = '';
+    let depth = 0;
+    let foundOpen = false;
+    const end = Math.min(lines.length, startIdx + maxForward);
+    for (let i = startIdx; i < end; i++) {
+        text += (i > startIdx ? '\n' : '') + lines[i];
+        for (const ch of lines[i]) {
+            if (ch === '(') { depth++; foundOpen = true; }
+            else if (ch === ')') depth--;
+            if (foundOpen && depth === 0) return text;
+        }
+    }
+    return text;
+}
+
+/**
+ * Check for shell execution options in a full (possibly multi-line) call text.
+ */
+function hasShellOption(callText, lang) {
+    if (lang === 'py') return /shell\s*=\s*True/.test(callText);
+    if (lang === 'js') return /shell\s*:\s*true/i.test(callText);
+    return false;
+}
+
+/**
+ * Return everything after the opening parenthesis of a call (trimmed).
+ * For Python subprocess.run([...], ...) this gives the first positional arg.
+ */
+function extractFirstArgText(callText) {
+    const idx = callText.indexOf('(');
+    if (idx === -1) return null;
+    return callText.slice(idx + 1).trimStart();
+}
+
+/**
+ * For JS spawn/execFile calls, skip past the binary (first arg) and find the
+ * args array ([...]) which is the second argument.
+ */
+function findListArgInCall(callText) {
+    const parenIdx = callText.indexOf('(');
+    if (parenIdx === -1) return null;
+    const after = callText.slice(parenIdx + 1);
+    let inStr = null;
+    for (let i = 0; i < after.length; i++) {
+        const ch = after[i];
+        if (!inStr) {
+            if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
+            if (ch === '[') return after.slice(i);
+        } else {
+            if (ch === '\\') { i++; continue; }
+            if (ch === inStr) inStr = null;
+        }
+    }
+    return null;
+}
+
+/**
+ * Analyze a list-form argument [...] to determine whether elements are
+ * all static literals, partially dynamic, or dynamically constructed.
+ *
+ * Returns null if argText doesn't start with '['.
+ */
+function analyzeListArg(argText) {
+    if (!argText || !argText.startsWith('[')) return null;
+
+    let depth = 0;
+    let end = -1;
+    for (let i = 0; i < argText.length; i++) {
+        if (argText[i] === '[') depth++;
+        else if (argText[i] === ']') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end === -1) return null;
+
+    const inner = argText.slice(1, end).trim();
+    if (!inner) return { isList: true, allLiteral: true, hasDynamicConstruction: false, hasShellWrapper: false };
+
+    const hasDynamicConstruction =
+        /\bf["']/.test(inner) ||
+        /\.format\s*\(/.test(inner) ||
+        /["']\s*\+\s*\w|\w\s*\+\s*["']/.test(inner) ||
+        /`[^`]*\$\{/.test(inner);
+
+    // Strip all string literals to check for remaining identifiers
+    const stripped = inner
+        .replace(/"""[\s\S]*?"""/g, '')
+        .replace(/'''[\s\S]*?'''/g, '')
+        .replace(/"(?:[^"\\]|\\.)*"/g, '')
+        .replace(/'(?:[^'\\]|\\.)*'/g, '')
+        .replace(/`(?:[^`\\]|\\.)*`/g, '');
+
+    const allLiteral = /^\s*[,\s]*\s*$/.test(stripped) && !hasDynamicConstruction;
+
+    // bash -c / sh -c / cmd /c → the inner argument is shell code
+    const hasShellWrapper =
+        (/["'](?:\/(?:usr\/)?(?:local\/)?bin\/)?(?:bash|sh|zsh)["']|["']cmd(?:\.exe)?["']/.test(inner)) &&
+        (/["']-c["']|["']\/c["']/.test(inner));
+
+    return { isList: true, allLiteral, hasDynamicConstruction, hasShellWrapper };
+}
+
+/* ════════════════════════════════════════════════════
    Main Analyzer
    ════════════════════════════════════════════════════ */
 
@@ -371,11 +481,130 @@ function analyzeCommandInjection(files) {
                     break;
                 }
 
-                /* ── Context 5: Regular production code ── */
+                /* ── Context 5a: Python subprocess / JS spawn,execFile — list-form analysis ── */
+                const isPySubprocess = pattern.lang === 'py' && !pattern.shellBased;
+                const isJsNoShell = pattern.lang === 'js' && !pattern.shellBased;
+
+                if (isPySubprocess || isJsNoShell) {
+                    const fullCall = extractFullCall(lines, i);
+                    const shellOpt = hasShellOption(fullCall, pattern.lang);
+
+                    if (shellOpt) {
+                        const sLit = LITERAL_ARG.test(line) && !TEMPLATE_LITERAL.test(line);
+                        const sCst = isArgLocalConstant(line, localConstants);
+                        let argsDynamic = false;
+                        if (sLit || sCst) {
+                            const chkText = isPySubprocess ? extractFirstArgText(fullCall) : findListArgInCall(fullCall);
+                            const chk = chkText ? analyzeListArg(chkText) : null;
+                            if (chk && !chk.allLiteral) argsDynamic = true;
+                        }
+                        findings.push({
+                            severity: ((sLit || sCst) && !argsDynamic) ? 'low' : 'critical',
+                            file: file.path, line: i + 1, snippet: trimmed,
+                            message: ((sLit || sCst) && !argsDynamic)
+                                ? 'Command with shell enabled and literal argument.'
+                                : 'Potential command injection — dynamic argument with shell enabled.',
+                            remediation: 'Use list-form execution without shell=True/shell:true. Validate all arguments.',
+                        });
+                        break;
+                    }
+
+                    let argListText;
+                    let binaryIsLiteral = true;
+
+                    if (isPySubprocess) {
+                        argListText = extractFirstArgText(fullCall);
+                    } else {
+                        binaryIsLiteral = /(?:execFile|execFileSync|spawn|spawnSync)\s*\(\s*["'`]/.test(fullCall);
+                        argListText = findListArgInCall(fullCall);
+                    }
+
+                    const listInfo = argListText ? analyzeListArg(argListText) : null;
+
+                    // For JS, the shell wrapper binary (bash/sh) is the first arg to
+                    // spawn/execFile, while -c is inside the args array.
+                    let jsShellWrapper = false;
+                    if (isJsNoShell && listInfo && listInfo.isList) {
+                        const binMatch = fullCall.match(/(?:execFile|execFileSync|spawn|spawnSync)\s*\(\s*["']([^"']+)["']/);
+                        if (binMatch) {
+                            const bin = binMatch[1].replace(/^.*[/\\]/, '');
+                            if (/^(?:bash|sh|zsh|cmd(?:\.exe)?)$/.test(bin) &&
+                                /["']-c["']|["']\/c["']/.test(argListText)) {
+                                jsShellWrapper = true;
+                            }
+                        }
+                    }
+
+                    if (listInfo && listInfo.isList) {
+                        if (listInfo.hasShellWrapper || jsShellWrapper) {
+                            findings.push({
+                                severity: 'high',
+                                file: file.path, line: i + 1, snippet: trimmed,
+                                message: 'Shell wrapper detected in list-form command (bash -c / sh -c). The inner argument is interpreted as shell code.',
+                                remediation: 'Avoid using shell wrappers with dynamic arguments. Execute the target command directly without a shell intermediary.',
+                            });
+                        } else if (listInfo.allLiteral && binaryIsLiteral) {
+                            findings.push({
+                                severity: 'info',
+                                file: file.path, line: i + 1, snippet: trimmed,
+                                message: 'Static command execution with hardcoded arguments (list-form, no shell). No injection risk.',
+                                remediation: 'This command uses a safe execution pattern. No action needed unless the command itself performs dangerous operations.',
+                            });
+                        } else if (listInfo.hasDynamicConstruction) {
+                            findings.push({
+                                severity: 'high',
+                                file: file.path, line: i + 1, snippet: trimmed,
+                                message: 'Command execution with dynamically constructed list arguments.',
+                                remediation: 'Avoid constructing command arguments from LLM or user input. Use validated, static argument lists.',
+                            });
+                        } else {
+                            findings.push({
+                                severity: 'medium',
+                                file: file.path, line: i + 1, snippet: trimmed,
+                                message: 'Command execution with variable arguments (list-form, no shell). Shell injection is not possible, but verify the variable source is not attacker-controlled.',
+                                remediation: 'The command arguments include variables. While shell injection is not possible with list-form execution, ensure these variables are not derived from LLM or user input without validation.',
+                            });
+                        }
+                        break;
+                    }
+
+                    // Python subprocess with string argument (no list, no shell=True)
+                    if (isPySubprocess) {
+                        const pyLit = LITERAL_ARG.test(line) && !TEMPLATE_LITERAL.test(line);
+                        findings.push({
+                            severity: pyLit ? 'medium' : 'high',
+                            file: file.path, line: i + 1, snippet: trimmed,
+                            message: pyLit
+                                ? 'String-form subprocess call without shell=True. Static string, but consider using list-form for clarity.'
+                                : 'String-form subprocess call with dynamic argument. Verify input is not from LLM.',
+                            remediation: pyLit
+                                ? 'Convert to list-form: subprocess.run(["cmd", "arg"]) instead of subprocess.run("cmd arg").'
+                                : 'Use list-form subprocess calls with validated arguments. Avoid passing unsanitized input.',
+                        });
+                        break;
+                    }
+
+                    // JS non-shell (spawn/execFile) without args array — dynamic binary
+                    if (isJsNoShell) {
+                        const jsLit = LITERAL_ARG.test(line) && !TEMPLATE_LITERAL.test(line);
+                        const jsCst = isArgLocalConstant(line, localConstants);
+                        if (!(jsLit || jsCst)) {
+                            findings.push({
+                                severity: 'medium',
+                                file: file.path, line: i + 1, snippet: trimmed,
+                                message: 'Non-shell command execution with dynamic argument. Shell injection is not possible, but verify the argument source.',
+                                remediation: 'Validate all arguments before passing to spawn/execFile. Use allowlists for permitted commands.',
+                            });
+                            break;
+                        }
+                        // Literal/const binary with no array: fall through to Context 5
+                    }
+                }
+
+                /* ── Context 5: Regular production code (shell-based calls, eval, etc.) ── */
                 const isLiteral = LITERAL_ARG.test(line) && !TEMPLATE_LITERAL.test(line);
                 const isConst = isArgLocalConstant(line, localConstants);
 
-                // Check for shell metacharacters inside literal strings (e.g. exec("rm -rf / && something"))
                 let hasDangerousMetachars = false;
                 if (isLiteral) {
                     const argMatch = line.match(/\(\s*['"`]([^'"`${}]*)['"`]/);
@@ -384,7 +613,6 @@ function analyzeCommandInjection(files) {
                     }
                 }
 
-                // Check for Python shell=True
                 const isPythonShellTrue = pattern.lang === "py" && /shell\s*=\s*True/i.test(line);
                 const isShellBased = pattern.shellBased || isPythonShellTrue || hasDangerousMetachars;
 

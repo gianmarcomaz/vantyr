@@ -22,12 +22,13 @@ Research indicates 37% of published agent skills contain security flaws and 43% 
 8. [Suppressing False Positives](#8-suppressing-false-positives)
 9. [Output Formats](#9-output-formats)
 10. [CI/CD Integration](#10-cicd-integration)
-11. [Local Scan Mode](#11-local-scan-mode)
-12. [Supported Languages and File Types](#12-supported-languages-and-file-types)
-13. [Constraints and Limitations](#13-constraints-and-limitations)
-14. [Out of Scope](#14-out-of-scope)
-15. [Certified by Vantyr](#15-certified-by-vantyr)
-16. [License](#16-license)
+11. [GitHub Action](#11-github-action)
+12. [Local Scan Mode](#12-local-scan-mode)
+13. [Supported Languages and File Types](#13-supported-languages-and-file-types)
+14. [Constraints and Limitations](#14-constraints-and-limitations)
+15. [Out of Scope](#15-out-of-scope)
+16. [Certified by Vantyr](#16-certified-by-vantyr)
+17. [License](#17-license)
 
 ---
 
@@ -475,7 +476,66 @@ SCORE=$(npx @gianmarcomaz/vantyr scan https://github.com/owner/repo --json | jq 
 
 ---
 
-## 11. Local Scan Mode
+## 11. GitHub Action
+
+The Vantyr GitHub Action wraps the CLI scanner to provide native GitHub integration: SARIF upload to the Security tab, a PR comment with the Trust Score and category breakdown, and a configurable pass/fail status check.
+
+**Add to your repository at `.github/workflows/vantyr.yml`:**
+
+```yaml
+name: MCP Security Scan
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  vantyr-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Vantyr MCP Security Scan
+        uses: gianmarcomaz/vantyr@v1
+        with:
+          threshold: 70
+```
+
+**Action inputs:**
+
+| Input | Default | Description |
+|---|---|---|
+| `target` | Current repo | GitHub URL to scan. Defaults to the repository running the workflow. |
+| `threshold` | `70` | Minimum Trust Score to pass the status check. Set to `0` to never fail. |
+| `post-comment` | `true` | Post a PR comment with score and findings. Comment is updated on re-push, never duplicated. |
+| `upload-sarif` | `true` | Upload `vantyr-results.sarif` to GitHub Code Scanning for inline PR annotations. |
+| `token` | `GITHUB_TOKEN` | GitHub token for API access. The built-in `GITHUB_TOKEN` is used automatically. |
+
+**What the Action does on each PR push:**
+
+1. Fetches the repository source and runs all 6 analyzers
+2. Writes `vantyr-results.sarif` — picked up by the `upload-sarif` step to populate the Security tab with per-file, per-line annotations
+3. Posts (or updates) a PR comment with the Trust Score, category scorecard, findings summary, and a badge snippet to copy
+4. Exits with code 1 if the Trust Score is below `threshold`, which blocks merge on protected branches
+
+**Scanning an external repository:**
+
+```yaml
+- uses: gianmarcomaz/vantyr@v1
+  with:
+    target: https://github.com/some-org/their-mcp-server
+    threshold: 80
+    post-comment: false
+```
+
+---
+
+## 12. Local Scan Mode
 
 `vantyr scan --local` reads MCP configuration and AI rules files from standard paths on your machine. No GitHub URL required.
 
@@ -492,7 +552,7 @@ Local mode scans the configuration files themselves. It does not follow `command
 
 ---
 
-## 12. Supported Languages and File Types
+## 13. Supported Languages and File Types
 
 | Type | Extensions |
 |---|---|
@@ -502,7 +562,7 @@ Local mode scans the configuration files themselves. It does not follow `command
 
 ---
 
-## 13. Constraints and Limitations
+## 14. Constraints and Limitations
 
 | Constraint | Detail |
 |---|---|
@@ -516,7 +576,7 @@ Local mode scans the configuration files themselves. It does not follow `command
 
 ---
 
-## 14. Out of Scope
+## 15. Out of Scope
 
 | Vulnerability class | Recommended alternative |
 |---|---|
@@ -529,7 +589,7 @@ Local mode scans the configuration files themselves. It does not follow `command
 
 ---
 
-## 15. Certified by Vantyr
+## 16. Certified by Vantyr
 
 If your MCP server scores **80 or above** (CERTIFIED), add the badge to your `README.md`:
 
@@ -555,6 +615,6 @@ npx -p @gianmarcomaz/vantyr@latest vantyr scan https://github.com/owner/repo
 
 ---
 
-## 16. License
+## 17. License
 
 MIT
